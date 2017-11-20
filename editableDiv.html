@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>可编辑的div作为编辑框(可插入超链接)</title>
+    <script type="text/javascript" src="angular.js"></script>
+    <script type="text/javascript" src="jquery.js"></script>
+    <style type="text/css">
+      .edit-area,
+      .show-text {
+        width: 500px;
+        height: 400px;
+        background-color: antiquewhite;
+        margin: 0 auto;
+        padding: 30px;
+      }
+
+      .edit-text {
+        height: 200px;
+        padding: 15px;
+        outline: none;
+        background-color: white;
+        border-radius: 5px;
+      }
+
+      .text-num {
+        float: right;
+      }
+
+      .insert-link {
+        margin-top: 20px;
+      }
+
+      .form-control {
+        width: 87%;
+        height: 20px;
+        padding: 2px 3px;
+        margin-top: 10px;
+        border: 0;
+      }
+
+      .insert-btn {
+        float: right;
+        margin-top: 20px;
+        height: 30px;
+        background-color: lavender;
+        outline: none;
+        border: 0;
+        cursor: pointer;
+        width: 90px;
+        height: 30px;
+        font-size: 15px;
+      }
+    </style>
+  </head>
+  <body ng-app>
+    <div class="edit-area" ng-controller="editCtrl">
+      <div id="text"
+        class="edit-text"
+        contenteditable="true"
+        ng-bind-html="textContent"
+        onkeydown="if(event.keyCode==13){return false;}"
+        ng-keydown="getTextContentLength($event)"
+        ng-click="getSelection()"
+        ng-keyup="getSelection()"></div>
+      <div class="text-num">
+        <span ng-bind="contentNum"></span>
+        <span>/</span>
+        <span ng-bind="total"></span>
+      </div>
+      <div class="insert-link">
+        <form ng-submit="insertLink()">
+          <div class="form-group link-name">
+            <label>文本：</label>
+            <input class="form-control" type="text" ng-model="link.name" ng-trim="true" required="true">
+          </div>
+          <div class="form-group link-value">
+            <label>链接：</label>
+            <input class="form-control" type="text" ng-model="link.value" ng-trim="true" pattern="(ftp|http|https):\/\/([\w-]+\.)+(\w+)(:[0-9]+)?(\/|([\w#!:.?+=&%@!\-\/]+))?" required="true" placeholder="https://www.baidu.com">
+          </div>
+          <button class="insert-btn">插入链接</button>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>
+<script type="text/javascript">
+  function editCtrl($scope, $timeout) {
+    states = {
+      textEl: null,
+      selection: null,
+      range: null
+    };
+
+    init = function() {
+      vm.contentNum = 0;
+      vm.total = 120;
+      vm.textContent = '';
+      vm.link = { name: '', value: '' };
+      vm.getTextContentLength();
+    }
+
+    // Set cursor to anyone element end position
+    setCursorPosition = function() {
+      states.selection = window.getSelection();
+      states.range = document.createRange();
+      states.range.selectNodeContents(states.textEl[0]);
+      states.range.collapse(false);
+    }
+
+    vm = $scope;
+
+    vm.getTextContentLength = function(event = null) {
+      // Default: auto add div element. So prevent default behaviour, and add "br" element to new line
+      if(event && event.keyCode== 13) {
+        states.textEl.append('<br><br>');
+
+        // Set cursor position to after "br" element
+        setCursorPosition();
+        states.selection.removeAllRanges();
+        states.selection.addRange(states.range);
+      }
+
+      // Get the text length
+      $timeout(function() {
+        if(!states.textEl) {
+          states.textEl = $('#text')
+        }
+        vm.contentNum = states.textEl.text().length // Get text length
+      }, 500)
+    };
+
+    // Get cursor position
+    vm.getSelection = function() {
+      if(window.getSelection) {
+        states.selection = window.getSelection();
+
+        if(states.selection.rangeCount) {
+          states.range = states.selection.getRangeAt(0);
+        }
+      }
+    };
+
+    // Insert super link to text
+    vm.insertLink = function() {
+      vm.getSelection();
+
+      if(states.range) {
+        startContainer = states.range.startContainer;
+        endContainer = states.range.endContainer;
+
+        // Prevent insert link in link
+        if(startContainer.parentElement.localName == 'a' && endContainer.parentElement.localName == 'a') {
+          return;
+        }
+
+        inputFieldNode = states.textEl[0];
+
+        insertAtCursor = false
+        linkStr = '<a href="' + vm.link.value + '">' + vm.link.name + '</a>'
+        link = $(linkStr)[0]
+
+        if(startContainer == endContainer) {
+          // Insert link when div is empty
+          if(startContainer == inputFieldNode) {
+            insertAtCursor = true;
+          } else {
+            for(key in inputFieldNode.childNodes) {
+              // Anyone location in text insert link
+              if(inputFieldNode.childNodes[key] == startContainer) {
+                insertAtCursor = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if(insertAtCursor) {
+          // Clear selected content
+          if(states.range.startOffset != states.range.endOffset) {
+            states.range.deleteContents();
+          }
+          states.range.insertNode(link);
+        } else {
+          // Append link when text box lose the focus
+          states.textEl.append(link);
+          setCursorPosition();
+        }
+
+        states.range.setStartAfter(link);
+        states.selection.removeAllRanges();
+        states.selection.addRange(states.range);
+
+        vm.getTextContentLength();
+        // vm.link = { name: '', value: '' }; // Can clear link after insert link
+
+      }
+    }
+
+    $timeout(function() {
+      // Rewrite paste event, insert unformatted text. if insert nomarl text, don't need to rewrite paste event
+      states.textEl.bind('paste', function(event) {
+        event.preventDefault(); // Prevent Dom default behavior
+        pasteText = event.originalEvent.clipboardData.getData('text/plain');// Get unformatted content from clipboard
+        text = '<span>' + pasteText + '</span>';
+        textNode = $(text)[0].lastChild;// Just insert pastText
+        states.range.insertNode(textNode);
+        states.range.setStartAfter(textNode);
+        states.selection.removeAllRanges();
+        states.selection.addRange(states.range);
+      })
+    }, 1000);
+
+    // Text just contain '<br>' and '&nbsp;'. If you need plain text, you can use this method. Example: weixin reply message just support a element.
+    //text = states.textEl.html()
+    //text = text.replace(/&nbsp;/g, ' ').replace(/<br>/g, '\n')
+
+    init();
+  }
+</script>
